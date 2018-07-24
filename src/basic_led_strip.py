@@ -7,6 +7,7 @@ import neopixel
 
 
 NLEDS = 20
+COLOR_STEP = 10
 
 RAW_COLOR_ARRAY = [
   (255, 0, 0),
@@ -67,7 +68,7 @@ print('ncolors:', NCOLORS)
 
 i = 0
 while True:
-    i = (i+1) % NCOLORS
+    i = (i + COLOR_STEP) % NCOLORS
     print('shift', i, NLEDS, NCOLORS)
     for j in range(NLEDS):
         #print('  led', j)
@@ -79,4 +80,3 @@ while True:
     if metro_neo:
         metro_neo[0] = COLOR_ARRAY[i]
     board_led.value = not board_led.value
-
