@@ -127,6 +127,8 @@ board_led.value = True
 i = 0
 while True:
     if palette_but.get_press():
+        for j in range(NLEDS):
+            neos[j] = (180, 0, 180) if j % 4 == 0 else (0, 0, 0)
         PALETTE_INDEX = (PALETTE_INDEX + 1) % len(PALETTES)
     palette = PALETTES[PALETTE_INDEX]
 
@@ -137,9 +139,9 @@ while True:
     neos.brightness = scaled
 
     # TODO: hm, does it make sense?
-    step = max(2, int(len(palette) / NLEDS * 0.1 * COLOR_STEP_MULT))
+    step = max(2, int(len(palette) / NLEDS * 0.5 * COLOR_STEP_MULT))
     # TODO: tweak.
-    step *= int(baked * 20)
+    step *= int(baked * 10)
 
     i = (i + step) % len(palette)
     for j in range(NLEDS):
