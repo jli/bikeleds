@@ -31,6 +31,39 @@ class Button(object):
         print('get_press: {} ({} & !{})'.format(ret, cur_pressed, prev_pressed))
         return ret
 
+class Accel(object):
+    EWMA_WEIGHT = 0.05  # for new points
+
+    def __init__(self, pin_x, pin_y, pin_z):
+        self._x = analogio.AnalogIn(pin_x)
+        self._y = analogio.AnalogIn(pin_y)
+        self._z = analogio.AnalogIn(pin_z)
+        self._last_val = (0, 0, 0)
+        self._ewma_change = 0
+
+    def _read(self):
+        def cook(axis):
+            # TODO: itsy-bitsy has 12-bit ADCs - is this right?
+            val = axis.value / 65536
+            val -= 0.5  # Shift values to true center (0.5).
+            return val * 3.0  # Convert to gravities.
+        return cook(self._x), cook(self._y), cook(self._z)
+
+    def get_ewma_change(self):
+        def squared_dist(p1, p2):
+            (x1, y1, z1), (x2, y2, z2) = p1, p2
+            return (x2 - x1) ** 2 + (y2 - y1) ** 2 + (z2 - z1) ** 2
+        cur = self._read()
+        # TODO: is it sensible to be measuring diffs? These are already
+        # accelerations, why not just ewma on the raw values? (maybe remove Z?)
+        raw_diff = squared_dist(self._last_val, cur)
+        # Increase by 30x, limit to 5.0
+        cooked_diff = min(raw_diff * 30, 5)
+        self._ewma_change = (self.EWMA_WEIGHT * cooked_diff
+                             + (1-self.EWMA_WEIGHT) * self._ewma_change)
+        self._last_val = cur
+        return cur, raw_diff, cooked_diff, self._ewma_change
+
 def smoothify(n, xs):
     def intavg(x, y):
         return int((x + y) / 2)
@@ -52,11 +85,6 @@ def smoothify(n, xs):
         return call_n_times(f, f(x), n-1)
     return call_n_times(smooth, xs, n)
 
-def accel_value(axis):
-    val = axis.value / 65535
-    val -= 0.5  # Shift values to true center (0.5).
-    return val * 3.0  # Convert to gravities.
-
 RGB = smoothify(7, [(255, 0, 0),
                     (0, 255, 0),
                     (0, 0, 255)])
@@ -70,17 +98,16 @@ ORANGE_PURPLE = smoothify(5, [(150, 50, 0),
 PALETTES = [RGB, GREEN_BLUE, VIOLET, ORANGE_PURPLE]
 PALETTE_INDEX = 0
 
-LAST_ACCEL_VAL = (0, 0, 0)
-AVG_ACCEL_CHG = 0
-EWMA_WEIGHT = 0.05  # for new points
-
 palette_but = Button(board.D11)
 
 ## setup LEDs and smoothed color array
 
 board_led = simpleio.DigitalOut(board.D13)
+board_led.value = True
 
-# on-board metro neopixel
+neos = neopixel.NeoPixel(board.D12, NLEDS)
+neos.brightness = .1
+
 metro_neo = None
 try:
     metro_neo = neopixel.NeoPixel(board.NEOPIXEL, 1)
@@ -89,35 +116,9 @@ except AttributeError:
 if metro_neo:
     metro_neo.brightness = 0.01
 
-neos = neopixel.NeoPixel(board.D12, NLEDS)
-neos.brightness = .1
+## accel
+accel = Accel(board.A0, board.A1, board.A2)
 
-## setup accelerometer
-
-x_axis = analogio.AnalogIn(board.A0)
-y_axis = analogio.AnalogIn(board.A1)
-z_axis = analogio.AnalogIn(board.A2)
-
-def get_new_accel_point():
-    return accel_value(x_axis), accel_value(y_axis), accel_value(z_axis)
-
-def squared_dist(p1, p2):
-    (x1, y1, z1), (x2, y2, z2) = p1, p2
-    return (x2 - x1) ** 2 + (y2 - y1) ** 2 + (z2 - z1) ** 2
-
-def get_accel_change():
-    global LAST_ACCEL_VAL, AVG_ACCEL_CHG
-    last = LAST_ACCEL_VAL
-    cur = get_new_accel_point()
-    # Increase by 30x, limit to 5.0
-    raw = squared_dist(last, cur)
-    move = min(raw * 30, 5)
-    AVG_ACCEL_CHG = EWMA_WEIGHT * move + (1-EWMA_WEIGHT) * AVG_ACCEL_CHG
-    LAST_ACCEL_VAL = cur
-    return raw, move, AVG_ACCEL_CHG
-
-
-board_led.value = True
 
 i = 0
 while True:
@@ -127,16 +128,17 @@ while True:
         PALETTE_INDEX = (PALETTE_INDEX + 1) % len(PALETTES)
     palette = PALETTES[PALETTE_INDEX]
 
-    raw, cooked, baked = get_accel_change()
-    scaled = min(MAX_BRIGHT, max(MIN_BRIGHT, baked))
-    print('({:.3f}, {:.3f}, {:.3f}, {:.3f})'.format(raw, cooked, baked, scaled))
+    (x,y,z), raw_diff, cooked_diff, baked_diff = accel.get_ewma_change()
+    accel_brightness = min(MAX_BRIGHT, max(MIN_BRIGHT, baked_diff))
+    print('(({:.2f}, {:.2f}, {:.2f}), {:.2f}, {:.2f}, {:.2f}, {:.2f})'.format(
+        x, y, z, raw_diff, cooked_diff, baked_diff, accel_brightness))
 
-    neos.brightness = scaled
+    neos.brightness = accel_brightness
 
     # TODO: hm, does it make sense?
     step = max(2, int(len(palette) / NLEDS * 0.5 * COLOR_STEP_MULT))
     # TODO: tweak.
-    step *= int(baked * 10)
+    step *= int(baked_diff * 10)
 
     i = (i + step) % len(palette)
     for j in range(NLEDS):
