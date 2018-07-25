@@ -38,7 +38,7 @@ class Button(object):
         cur_pressed = self._is_pressed()
         self._prev_is_pressed = cur_pressed
         ret =  cur_pressed and not prev_pressed
-        print('get_press: {} ({} & !{})'.format(ret, cur_pressed, prev_pressed))
+        print('button: {} ({} & !{})'.format(ret, cur_pressed, prev_pressed))
         return ret
 
 class Pot(object):
@@ -71,11 +71,40 @@ class Accel(object):
         # Remove gravity. Z seems to be 0.30 and not 1. Dunno why.
         z -= 0.3
         mean_accel = (abs(x) + abs(y) + abs(z)) / 3
-        # 0.3 mean accel seems high
-        movement_quotient = simpleio.map_range(mean_accel, 0.05, 0.15, 0, 1.0)
-        self._mq_ewma = (self.EWMA_WEIGHT * movement_quotient
+        # 0.2 mean accel seems to be a pretty high value. make it 0.15 so it's
+        # easier to trigger.
+        mq = simpleio.map_range(mean_accel, 0.05, 0.15, 0, 1.0)
+        self._mq_ewma = (self.EWMA_WEIGHT * mq
                          + (1-self.EWMA_WEIGHT) * self._mq_ewma)
-        return (x, y, z), mean_accel, movement_quotient, self._mq_ewma
+        print('accel: [ ({:.2f}, {:.2f}, {:.2f})\t mean:{:.2f}\t mq:{:.2f}\t mq_ewma:{:.2f} ])'.format(
+            x, y, z, mean_accel, mq, self._mq_ewma))
+        return self._mq_ewma
+
+
+class Neos(object):
+    def __init__(self, pin, num_leds):
+        self._num = num_leds
+        self._neos = neopixel.NeoPixel(pin, num_leds)
+        for i in range(2):
+            self.brightness = 0.1 if i == 0 else 0.3
+            self.set_colors(smoothify(5, [(200, 0, 0), (0, 0, 200)]))
+            self.brightness = 0.2 if i == 0 else 0.4
+            self.set_colors(smoothify(5, [(0, 0, 200), (200, 0, 200)]))
+        self.brightness = 0.1
+        self.set_colors([(0,0,0)])
+
+    @property
+    def brightness(self):
+        return self._brightness
+
+    @brightness.setter
+    def brightness(self, val):
+        self._neos.brightness = val
+        self._brightness = val
+
+    def set_colors(self, colors):
+        for i in range(self._num):
+            self._neos[i] = colors[i % len(colors)]
 
 
 def smoothify(n, xs):
@@ -98,6 +127,11 @@ def smoothify(n, xs):
             return x
         return call_n_times(f, f(x), n-1)
     return call_n_times(smooth, xs, n)
+
+
+def shift_array(xs, n):
+    n %= len(xs)
+    return xs[n:] + xs[:n]
 
 
 RGB = smoothify(7, [(255, 0, 0),
@@ -142,10 +176,9 @@ def try_get_board_neo():
 board_led = simpleio.DigitalOut(board.D13)
 board_led.value = True
 
-neos = neopixel.NeoPixel(board.D12, NLEDS)
-neos.brightness = .1
-
 board_neo = try_get_board_neo()
+
+neos = Neos(board.D12, NLEDS)
 
 ## accel
 accel = Accel(board.A0, board.A1, board.A2)
@@ -160,37 +193,36 @@ palette_but = Button(board.D11)
 i = 0
 while True:
     print()
+    board_led.value = not board_led.value
+
+    ## Accel
+    mq = accel.get_movement_quotient()
+
+    ## Brightness pot
+    pot_val = bright_pot.read()
+    bright_val = mq if pot_val < ACCEL_BRIGHTNESS_THRESH else pot_val
+    bright_src = 'accel' if pot_val < ACCEL_BRIGHTNESS_THRESH else 'pot'
+    bright_in_min = 0 if pot_val < ACCEL_BRIGHTNESS_THRESH else ACCEL_BRIGHTNESS_THRESH
+    brightness = simpleio.map_range(bright_val, bright_in_min, 1,
+                                    MIN_BRIGHT, MAX_BRIGHT)
+    print('brightpot: [ raw:{:.2f}\t mapped:{:.2f}\t src:{} ]'.format(
+        bright_val, brightness, bright_src))
+    neos.brightness = brightness
+
+    ## Palette button
     if palette_but.get_press():
-        for j in range(NLEDS):
-            neos[j] = (180, 0, 180) if j % 4 == 0 else (0, 0, 0)
+        neos.set_colors([(0,0,0), (0,0,0), (180, 0, 180)])
         PALETTE_INDEX = (PALETTE_INDEX + 1) % len(PALETTES)
     palette = PALETTES[PALETTE_INDEX]
 
-    (x,y,z), mean_accel, mq, mq_ewma = accel.get_movement_quotient()
-    print('accel: [ ({:.2f}, {:.2f}, {:.2f})\t mean:{:.2f}\t mq:{:.2f}\t mq_ewma:{:.2f} ])'.format(
-        x, y, z, mean_accel, mq, mq_ewma))
-
-    bright_val = bright_pot.read()
-    bright_source = None
-    if bright_val < ACCEL_BRIGHTNESS_THRESH:
-        brightness = simpleio.map_range(mq_ewma, 0, 1, MIN_BRIGHT, MAX_BRIGHT)
-        bright_source = 'accel'
-    else:
-        brightness = simpleio.map_range(bright_val, ACCEL_BRIGHTNESS_THRESH, 1,
-                                        MIN_BRIGHT, MAX_BRIGHT)
-        bright_source = 'pot'
-    print('brightpot: [ {:.2f}\t brightness:{:.2f}\t src:{} ]'.format(
-        bright_val, brightness, bright_source))
-    neos.brightness = brightness
+    ## Iterate palette
 
     # TODO: this doesn't make sense.
     step = max(2, int(len(palette) / NLEDS * 0.5 * COLOR_STEP_MULT))
-    step *= int(mq_ewma * 10)
+    step *= int(mq * 10)
 
     i = (i + step) % len(palette)
-    for j in range(NLEDS):
-        neos[j] = palette[(i + j) % len(palette)]
+
+    neos.set_colors(shift_array(palette, i))
     if board_neo:
-        print('setting board neo to:', palette[i])
         board_neo[0] = palette[i]
-    board_led.value = not board_led.value
