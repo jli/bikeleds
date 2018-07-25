@@ -139,7 +139,13 @@ class Neos(object):
         self.brightness = 0.15
         self.set_colors(smoothify(5, [(0, 0, 200), (200, 0, 200)]))
         self.brightness = 0.1
+        self.set_black()
+
+    def set_black(self):
         self.set_colors([(0,0,0)])
+
+    def set_white(self):
+        self.set_colors([(255,255,255)])
 
 
 def smoothify(n, xs):
@@ -235,6 +241,7 @@ MIN_NEW_PALETTE_TIME = 3
 last_palette_change_time = 0
 
 i = 0
+palette = PALETTES[PALETTE_INDEX]
 while True:
     now = timestamp()
     if DEBUG >= 2: print()
@@ -247,25 +254,30 @@ while True:
         print('pot: {:.2f}\t[ potval:{:.2f} ]'.format(bright, pot_val))
     neos.brightness = bright
 
-    ## Accel
-    is_moving = accel.is_moving()
-
     ## Palette button
     if palette_but.get_press():
         neos.set_colors([(0,0,0), (0,0,0), (180, 0, 180)])
         PALETTE_INDEX = (PALETTE_INDEX + 1) % len(PALETTES)
+        palette = PALETTES[PALETTE_INDEX]
         last_palette_change_time = now
 
+    ## Accel
+    is_moving = accel.is_moving()
+
     if (not is_moving
-        and now - last_palette_change_time > MIN_NEW_PALETTE_TIME):
+        and now - last_palette_change_time > MIN_NEW_PALETTE_TIME
+        and palette != IDLE):
+        print('now idle..')
+        neos.set_black()
         palette = IDLE
-    else:
+    elif (is_moving and palette == IDLE):
+        print('now active..')
+        neos.set_white()
         palette = PALETTES[PALETTE_INDEX]
 
     ## Iterate palette
 
     raw_step = len(palette) * FULL_UPDATE_SEC / TARGET_PALETTE_CYCLE_SEC
-    # mq_step = raw_step * simpleio.map_range(mq, 0, 1, 0.5, 10)
     step = min(max(int(round(raw_step)), 1), int(len(palette) / 2) )
 
     i = (i + step) % len(palette)
