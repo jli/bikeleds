@@ -19,7 +19,6 @@ class Button(object):
         self._prev_is_pressed = self._is_pressed()
 
     def _is_pressed(self):
-        # TODO: why does this need inverting?
         return not self._but.value
 
     # This only returns true if button is pressed and wasn't pressed the last
@@ -28,33 +27,29 @@ class Button(object):
         prev_pressed = self._prev_is_pressed
         cur_pressed = self._is_pressed()
         self._prev_is_pressed = cur_pressed
-        return cur_pressed and not prev_pressed
-
-def intavg(x, y):
-    return int((x + y) / 2)
-
-def avgrgb(rgb1, rgb2):
-    (r1,g1,b1), (r2,g2,b2) = (rgb1, rgb2)
-    return (intavg(r1, r2),
-            intavg(g1, g2),
-            intavg(b1, b2))
-
-def smooth(xs):
-    ys = []
-    for i in range(len(xs)):
-        ys.append(xs[i])
-        if i != len(xs) - 1:
-            ys.append(avgrgb(xs[i], xs[i+1]))
-        else:
-            ys.append(avgrgb(xs[i], xs[0]))
-    return ys
-
-def call_n_times(f, x, n):
-    if n == 0:
-        return x
-    return call_n_times(f, f(x), n-1)
+        ret =  cur_pressed and not prev_pressed
+        print('get_press: {} ({} & !{})'.format(ret, cur_pressed, prev_pressed))
+        return ret
 
 def smoothify(n, xs):
+    def intavg(x, y):
+        return int((x + y) / 2)
+    def avgrgb(rgb1, rgb2):
+        (r1,g1,b1), (r2,g2,b2) = (rgb1, rgb2)
+        return (intavg(r1, r2),
+                intavg(g1, g2),
+                intavg(b1, b2))
+    def smooth(xs):
+        ys = []
+        for i in range(len(xs)):
+            ys.append(xs[i])
+            next_x = xs[0] if i == len(xs) - 1 else xs[i+1]
+            ys.append(avgrgb(xs[i], next_x))
+        return ys
+    def call_n_times(f, x, n):
+        if n == 0:
+            return x
+        return call_n_times(f, f(x), n-1)
     return call_n_times(smooth, xs, n)
 
 def accel_value(axis):
