@@ -15,13 +15,15 @@ NLEDS = 45
 MIN_BRIGHT = 0.05
 MAX_BRIGHT = 0.3
 
+DEBUG = 1
+
 # TODO: lower this when pot is properly wired in.
 # when brightness pot is below this level, accelerometer movement quotient is
 # used to determine brightness.
 ACCEL_BRIGHTNESS_THRESH = 0.9
 
 # try to cycle between full color palette in this many seconds
-TARGET_PALETTE_CYCLE_SEC = 5
+TARGET_PALETTE_CYCLE_SEC = 7
 
 # TODO: gah, this can't be right...
 LED_UPDATE_SEC = (
@@ -31,6 +33,9 @@ LED_UPDATE_SEC = (
       (0.0075 if NLEDS >= 10 else
        0.0055))))
 FULL_UPDATE_SEC = LED_UPDATE_SEC * NLEDS
+
+def timestamp():
+    return time.monotonic()
 
 class Button(object):
     def __init__(self, pin):
@@ -49,7 +54,8 @@ class Button(object):
         cur_pressed = self._is_pressed()
         self._prev_is_pressed = cur_pressed
         ret =  cur_pressed and not prev_pressed
-        print('but: {}\t[ cur:{}\t prev:{} ]'.format(ret, cur_pressed, prev_pressed))
+        if DEBUG >= 2:
+            print('but: {}\t[ cur:{}\t prev:{} ]'.format(ret, cur_pressed, prev_pressed))
         return ret
 
 class Pot(object):
@@ -61,13 +67,17 @@ class Pot(object):
 
 
 class Accel(object):
-    EWMA_WEIGHT = 0.1  # for new points
+    EWMA_WEIGHT = 0.8  # for new points
+    SIZABLE_MOVE_THRESH = 0.01
+    IDLE_DELAY = 3
 
     def __init__(self, pin_x, pin_y, pin_z):
         self._x = analogio.AnalogIn(pin_x)
         self._y = analogio.AnalogIn(pin_y)
         self._z = analogio.AnalogIn(pin_z)
         self._prev_read = (0, 0, 0)
+        self._prev_time = 0
+        self._last_sizable_move_time = timestamp()
         self._mq_ewma = 0
 
     def _read(self):
@@ -78,34 +88,36 @@ class Accel(object):
             return val * 3.0  # Convert to gravities.
         return cook(self._x), cook(self._y), cook(self._z)
 
-    def get_movement_quotient(self):
+    def is_moving(self):
         def sq_dist(a, b):
             (x1,y1,z1), (x2,y2,z2) = a, b
             return (x2 - x1) ** 2 + (y2-y1) ** 2 + (z2-z1) ** 2
-        prev = self._prev_read
-        cur = self._read()
-        diff = sq_dist(prev, cur)
-        # TODO: Gah. this doesn't feel right...
-        mq = simpleio.map_range(diff, 0.0, 0.05, 0, 1.0)
-        self._mq_ewma = (self.EWMA_WEIGHT * mq
+        pread, ptime = self._prev_read, self._prev_time
+        nread, ntime = self._read(), timestamp()
+        daccel = sq_dist(pread, nread)
+        dtime = (ntime - ptime)
+        accel_change =  daccel / dtime
+        self._mq_ewma = (self.EWMA_WEIGHT * accel_change
                          + (1-self.EWMA_WEIGHT) * self._mq_ewma)
-        self._prev_read = cur
-        print('acc: {:.2f}\t[ ({:.2f},{:.2f},{:.2f})\t diff:{:.2f}\t mq:{:.2f} ]'.format(
-            self._mq_ewma, cur[0], cur[1], cur[2], diff, mq))
-        return self._mq_ewma
+        self._prev_read = nread
+        self._prev_time = ntime
+        if self._mq_ewma > self.SIZABLE_MOVE_THRESH:
+            if DEBUG >= 2: print('sizable move!!') 
+            self._last_sizable_move_time = ntime
+        idle_time = ntime - self._last_sizable_move_time
+        moving = idle_time < self.IDLE_DELAY
+        if DEBUG >= 2:
+            print('acc: {}\t[ ({:.2f},{:.2f},{:.2f})\t da/dt:{:.4f}/{:.1f}\t cng:{:.4f}\t ewma:{:.3f}\t idle:{:.1f} ]'.format(
+                moving, nread[0], nread[1], nread[2], daccel, dtime,
+                accel_change, self._mq_ewma, idle_time))
+        return moving
 
 
 class Neos(object):
     def __init__(self, pin, num_leds):
         self._num = num_leds
         self._neos = neopixel.NeoPixel(pin, num_leds)
-        for i in range(2):
-            self.brightness = 0.1 if i == 0 else 0.2
-            self.set_colors(smoothify(5, [(200, 0, 0), (0, 0, 200)]))
-            self.brightness = 0.15 if i == 0 else 0.25
-            self.set_colors(smoothify(5, [(0, 0, 200), (200, 0, 200)]))
-        self.brightness = 0.1
-        self.set_colors([(0,0,0)])
+        self._initialization_colors()
 
     @property
     def brightness(self):
@@ -120,6 +132,14 @@ class Neos(object):
         for i in range(self._num):
             i = self._num - 1 - i
             self._neos[i] = colors[i % len(colors)]
+
+    def _initialization_colors(self):
+        self.brightness = 0.1
+        self.set_colors(smoothify(5, [(200, 0, 0), (0, 0, 200)]))
+        self.brightness = 0.15
+        self.set_colors(smoothify(5, [(0, 0, 200), (200, 0, 200)]))
+        self.brightness = 0.1
+        self.set_colors([(0,0,0)])
 
 
 def smoothify(n, xs):
@@ -161,6 +181,13 @@ ORANGE_PURPLE = smoothify(5, [(150, 50, 0),
                               (125, 0, 125)])
 PALETTES = [RGB, GREEN_BLUE, VIOLET, ORANGE_PURPLE]
 PALETTE_INDEX = 0
+
+IDLE = smoothify(3, [(0, 0, 0),
+                     (180, 0, 90),
+                     (100, 0, 125),
+                     (180, 0, 90),
+                     (0, 0, 0)])
+
 
 
 ## LEDs
@@ -204,40 +231,49 @@ bright_pot = Pot(board.A4)
 ## palette button
 palette_but = Button(board.D11)
 
+MIN_NEW_PALETTE_TIME = 3
+last_palette_change_time = 0
 
 i = 0
 while True:
-    print()
+    now = timestamp()
+    if DEBUG >= 2: print()
     board_led.value = not board_led.value
-
-    ## Accel
-    mq = accel.get_movement_quotient()
 
     ## Brightness pot
     pot_val = bright_pot.read()
-    raw_bright = mq if pot_val < ACCEL_BRIGHTNESS_THRESH else pot_val
-    bright_src = 'accel' if pot_val < ACCEL_BRIGHTNESS_THRESH else 'pot'
-    bright_in_min = 0 if pot_val < ACCEL_BRIGHTNESS_THRESH else ACCEL_BRIGHTNESS_THRESH
-    scale_bright = simpleio.map_range(raw_bright, bright_in_min, 1,
-                                    MIN_BRIGHT, MAX_BRIGHT)
-    print('pot: {:.2f}\t[ src:{}\t potval:{:.2f}\t rawbrite:{:.2f}\t ]'.format(
-        scale_bright, bright_src, pot_val, raw_bright))
-    neos.brightness = scale_bright
+    bright = simpleio.map_range(pot_val, 0, 1, MIN_BRIGHT, MAX_BRIGHT)
+    if DEBUG >= 2:
+        print('pot: {:.2f}\t[ potval:{:.2f} ]'.format(bright, pot_val))
+    neos.brightness = bright
+
+    ## Accel
+    is_moving = accel.is_moving()
 
     ## Palette button
     if palette_but.get_press():
         neos.set_colors([(0,0,0), (0,0,0), (180, 0, 180)])
         PALETTE_INDEX = (PALETTE_INDEX + 1) % len(PALETTES)
-    palette = PALETTES[PALETTE_INDEX]
+        last_palette_change_time = now
+
+    if (not is_moving
+        and now - last_palette_change_time > MIN_NEW_PALETTE_TIME):
+        palette = IDLE
+    else:
+        palette = PALETTES[PALETTE_INDEX]
 
     ## Iterate palette
 
     raw_step = len(palette) * FULL_UPDATE_SEC / TARGET_PALETTE_CYCLE_SEC
-    mq_step = raw_step * simpleio.map_range(mq, 0, 1, 0.5, 10)
-    step = min(max(int(round(mq_step)), 1), int(len(palette) / 2) )
+    # mq_step = raw_step * simpleio.map_range(mq, 0, 1, 0.5, 10)
+    step = min(max(int(round(raw_step)), 1), int(len(palette) / 2) )
 
     i = (i + step) % len(palette)
-    print('stp:', step, '\t[ raw:', raw_step, '\t mq:', mq_step, ' ]')
+    if DEBUG >= 2:
+        print('stp:', step, '\t[ raw:', raw_step, ' ]')
+
+    if DEBUG >= 1:
+        print('mv:{} \tbr:{:.1f}\tstp:{}'.format(is_moving, bright, step))
 
     neos.set_colors(shift_array(palette, i))
     if board_neo:
