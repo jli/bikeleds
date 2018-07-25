@@ -7,8 +7,8 @@ import time
 import neopixel
 
 NLEDS = 40
-MIN_BRIGHT = 0.1
-MAX_BRIGHT = 0.3
+MIN_BRIGHT = 0.05
+MAX_BRIGHT = 0.8
 COLOR_STEP_MULT = 1.0
 
 class Button(object):
@@ -32,14 +32,13 @@ class Button(object):
         return ret
 
 class Accel(object):
-    EWMA_WEIGHT = 0.05  # for new points
+    EWMA_WEIGHT = 0.1  # for new points
 
     def __init__(self, pin_x, pin_y, pin_z):
         self._x = analogio.AnalogIn(pin_x)
         self._y = analogio.AnalogIn(pin_y)
         self._z = analogio.AnalogIn(pin_z)
-        self._last_val = (0, 0, 0)
-        self._ewma_change = 0
+        self._mq_ewma = 0
 
     def _read(self):
         def cook(axis):
@@ -49,20 +48,16 @@ class Accel(object):
             return val * 3.0  # Convert to gravities.
         return cook(self._x), cook(self._y), cook(self._z)
 
-    def get_ewma_change(self):
-        def squared_dist(p1, p2):
-            (x1, y1, z1), (x2, y2, z2) = p1, p2
-            return (x2 - x1) ** 2 + (y2 - y1) ** 2 + (z2 - z1) ** 2
-        cur = self._read()
-        # TODO: is it sensible to be measuring diffs? These are already
-        # accelerations, why not just ewma on the raw values? (maybe remove Z?)
-        raw_diff = squared_dist(self._last_val, cur)
-        # Increase by 30x, limit to 5.0
-        cooked_diff = min(raw_diff * 30, 5)
-        self._ewma_change = (self.EWMA_WEIGHT * cooked_diff
-                             + (1-self.EWMA_WEIGHT) * self._ewma_change)
-        self._last_val = cur
-        return cur, raw_diff, cooked_diff, self._ewma_change
+    def get_movement_quotient(self):
+        (x, y, z) = self._read()
+        # Remove gravity. Z seems to be 0.30 and not 1. Dunno why.
+        z -= 0.3
+        mean_accel = (abs(x) + abs(y) + abs(z)) / 3
+        # 0.3 mean accel seems high
+        movement_quotient = simpleio.map_range(mean_accel, 0.05, 0.15, 0, 1.0)
+        self._mq_ewma = (self.EWMA_WEIGHT * movement_quotient
+                         + (1-self.EWMA_WEIGHT) * self._mq_ewma)
+        return (x, y, z), mean_accel, movement_quotient, self._mq_ewma
 
 def smoothify(n, xs):
     def intavg(x, y):
@@ -128,17 +123,17 @@ while True:
         PALETTE_INDEX = (PALETTE_INDEX + 1) % len(PALETTES)
     palette = PALETTES[PALETTE_INDEX]
 
-    (x,y,z), raw_diff, cooked_diff, baked_diff = accel.get_ewma_change()
-    accel_brightness = min(MAX_BRIGHT, max(MIN_BRIGHT, baked_diff))
-    print('(({:.2f}, {:.2f}, {:.2f}), {:.2f}, {:.2f}, {:.2f}, {:.2f})'.format(
-        x, y, z, raw_diff, cooked_diff, baked_diff, accel_brightness))
+    (x,y,z), mean_accel, mq, mq_ewma = accel.get_movement_quotient()
+    accel_brightness = simpleio.map_range(mq_ewma, 0, 1, MIN_BRIGHT, MAX_BRIGHT)
+    print('(accel:({:.2f}, {:.2f}, {:.2f}), mean:{:.2f}, mq:{:.2f}, mq_ewma:{:.2f}, bright:{:.2f})'.format(
+        x, y, z, mean_accel, mq, mq_ewma, accel_brightness))
 
     neos.brightness = accel_brightness
 
     # TODO: hm, does it make sense?
     step = max(2, int(len(palette) / NLEDS * 0.5 * COLOR_STEP_MULT))
     # TODO: tweak.
-    step *= int(baked_diff * 10)
+    step *= int(mq_ewma * 10)
 
     i = (i + step) % len(palette)
     for j in range(NLEDS):
