@@ -118,6 +118,7 @@ class Neos(object):
 
     def set_colors(self, colors):
         for i in range(self._num):
+            i = self._num - 1 - i
             self._neos[i] = colors[i % len(colors)]
 
 
