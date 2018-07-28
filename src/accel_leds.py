@@ -13,7 +13,7 @@ import neopixel
 
 NLEDS = 45
 MIN_BRIGHT = 0.05
-MAX_BRIGHT = 0.3
+MAX_BRIGHT = 0.2
 
 DEBUG = 1
 
@@ -26,12 +26,13 @@ ACCEL_BRIGHTNESS_THRESH = 0.9
 TARGET_PALETTE_CYCLE_SEC = 7
 
 # TODO: gah, this can't be right...
-LED_UPDATE_SEC = (
-    0.027 if NLEDS >= 100 else
-    (0.015 if NLEDS >= 50 else
-     (0.013 if NLEDS >= 25 else
-      (0.0075 if NLEDS >= 10 else
-       0.0055))))
+# LED_UPDATE_SEC = (
+#     0.027 if NLEDS >= 100 else
+#     (0.015 if NLEDS >= 50 else
+#      (0.013 if NLEDS >= 25 else
+#       (0.0075 if NLEDS >= 10 else
+#        0.0055))))
+LED_UPDATE_SEC = 0.002
 FULL_UPDATE_SEC = LED_UPDATE_SEC * NLEDS
 
 def timestamp():
@@ -67,9 +68,9 @@ class Pot(object):
 
 
 class Accel(object):
-    EWMA_WEIGHT = 0.8  # for new points
-    SIZABLE_MOVE_THRESH = 0.01
-    IDLE_DELAY = 3
+    EWMA_WEIGHT = 0.2  # for new points
+    SIZABLE_MOVE_THRESH = 0.1
+    IDLE_DELAY = 4
 
     def __init__(self, pin_x, pin_y, pin_z):
         self._x = analogio.AnalogIn(pin_x)
@@ -102,7 +103,7 @@ class Accel(object):
         self._prev_read = nread
         self._prev_time = ntime
         if self._mq_ewma > self.SIZABLE_MOVE_THRESH:
-            if DEBUG >= 2: print('sizable move!!') 
+            if DEBUG >= 2: print('sizable move!! {} > {}'.format(self._mq_ewma, self.SIZABLE_MOVE_THRESH))
             self._last_sizable_move_time = ntime
         idle_time = ntime - self._last_sizable_move_time
         moving = idle_time < self.IDLE_DELAY
@@ -116,7 +117,7 @@ class Accel(object):
 class Neos(object):
     def __init__(self, pin, num_leds):
         self._num = num_leds
-        self._neos = neopixel.NeoPixel(pin, num_leds)
+        self._neos = neopixel.NeoPixel(pin, num_leds, auto_write=False)
         self._initialization_colors()
 
     @property
@@ -128,10 +129,11 @@ class Neos(object):
         self._neos.brightness = val
         self._brightness = val
 
-    def set_colors(self, colors):
+    def set_colors(self, colors, shift=0):
         for i in range(self._num):
             i = self._num - 1 - i
-            self._neos[i] = colors[i % len(colors)]
+            self._neos[i] = colors[(i + shift) % len(colors)]
+        self._neos.show()
 
     def _initialization_colors(self):
         self.brightness = 0.1
@@ -170,17 +172,12 @@ def smoothify(n, xs):
     return call_n_times(smooth, xs, n)
 
 
-def shift_array(xs, n):
-    n %= len(xs)
-    return xs[n:] + xs[:n]
-
-
 RGB = smoothify(7, [(255, 0, 0),
                     (0, 255, 0),
                     (0, 0, 255)])
-GREEN_BLUE = smoothify(5, [(0, 130, 60),
+GREEN_BLUE = smoothify(6, [(0, 130, 60),
                            (0, 50, 100)])
-VIOLET = smoothify(4, [(100, 0, 125),
+VIOLET = smoothify(5, [(100, 0, 125),
                        (50, 0, 90),
                        (90, 0, 50)])
 ORANGE_PURPLE = smoothify(5, [(150, 50, 0),
@@ -191,8 +188,7 @@ PALETTE_INDEX = 0
 IDLE = smoothify(3, [(0, 0, 0),
                      (180, 0, 90),
                      (100, 0, 125),
-                     (180, 0, 90),
-                     (0, 0, 0)])
+                     (180, 0, 90)])
 
 
 
@@ -242,6 +238,7 @@ last_palette_change_time = 0
 
 i = 0
 palette = PALETTES[PALETTE_INDEX]
+
 while True:
     now = timestamp()
     if DEBUG >= 2: print()
@@ -281,12 +278,12 @@ while True:
     step = min(max(int(round(raw_step)), 1), int(len(palette) / 2) )
 
     i = (i + step) % len(palette)
-    if DEBUG >= 2:
-        print('stp:', step, '\t[ raw:', raw_step, ' ]')
+    if DEBUG >= 1:
+        print('i:', i, '\tstp:', step, '\t[ raw:', raw_step, ' ]')
 
     if DEBUG >= 1:
         print('mv:{} \tbr:{:.1f}\tstp:{}'.format(is_moving, bright, step))
 
-    neos.set_colors(shift_array(palette, i))
+    neos.set_colors(palette, shift=i)
     if board_neo:
         board_neo[0] = palette[i]
