@@ -311,7 +311,7 @@ while True:
         neos.set_colors(BLACK, wave=True)
         neos.set_colors(palette, wave=True)
     elif (is_moving
-          and now - last_palette_change_time > MIN_NEW_PALETTE_TIME
+          and now - last_palette_change_time > MIN_NEW_PALETTE_TIME / 2  # less
           and palette == IDLE_PALETTE):
         print('now active..')
         palette = PALETTES[PALETTE_INDEX]
