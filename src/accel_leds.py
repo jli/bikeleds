@@ -1,5 +1,4 @@
 # TODO:
-# - use buttons instead of pot
 # - redo timing code
 # - make patterns follow geometry of bike. (refactor to usehorizontal position
 #   instead of index?)
@@ -27,8 +26,10 @@ except ImportError:
 import neopixel
 
 NLEDS = 45
-MIN_BRIGHT = 0.05
-MAX_BRIGHT = 0.2
+BRIGHT_MIN = 0.05
+BRIGHT_MAX = 0.6
+BRIGHT_INC = (BRIGHT_MAX - BRIGHT_MIN ) / 10
+BRIGHT_INIT = 0.1
 
 DEBUG = 1
 
@@ -49,6 +50,10 @@ TARGET_PALETTE_CYCLE_SEC = 7
 #        0.0055))))
 LED_UPDATE_SEC = 0.002
 FULL_UPDATE_SEC = LED_UPDATE_SEC * NLEDS
+
+WHITE = (255,255,255)
+BLACK = (0,0,0)
+RED = (255,0,0)
 
 def timestamp():
     return time.monotonic()
@@ -74,18 +79,11 @@ class Button(object):
             print('but: {}\t[ cur:{}\t prev:{} ]'.format(ret, cur_pressed, prev_pressed))
         return ret
 
-class Pot(object):
-    def __init__(self, pin):
-        self._pot = analogio.AnalogIn(pin)
-
-    def read(self):
-        return self._pot.value / 65536
-
 
 class Accel(object):
     EWMA_WEIGHT = 0.2  # for new points
     SIZABLE_MOVE_THRESH = 0.1
-    IDLE_DELAY = 4
+    IDLE_DELAY = 40 # 4
 
     def __init__(self, pin_x, pin_y, pin_z):
         self._x = analogio.AnalogIn(pin_x)
@@ -132,7 +130,7 @@ class Neos(object):
     def __init__(self, pin, num_leds):
         self._num = num_leds
         self._neos = neopixel.NeoPixel(pin, num_leds, auto_write=False)
-        self._initialization_colors()
+        self.brightness = BRIGHT_INIT
 
     @property
     def brightness(self):
@@ -140,28 +138,44 @@ class Neos(object):
 
     @brightness.setter
     def brightness(self, val):
-        self._neos.brightness = val
+        self._neos.brightness = max(BRIGHT_MIN, min(BRIGHT_MAX, val))
         self._brightness = val
 
     def set_colors(self, colors, shift=0):
+        if type(colors) is tuple:
+            colors = [colors]
         for i in range(self._num):
             i = self._num - 1 - i
             self._neos[i] = colors[(i + shift) % len(colors)]
         self._neos.show()
 
-    def _initialization_colors(self):
-        self.brightness = 0.1
-        self.set_colors(smoothify(5, [(200, 0, 0), (0, 0, 200)]))
-        self.brightness = 0.15
-        self.set_colors(smoothify(5, [(0, 0, 200), (200, 0, 200)]))
-        self.brightness = 0.1
-        self.set_black()
+    def inc_brightness(self):
+        new_bright = self.brightness + BRIGHT_INC
+        if new_bright >= BRIGHT_MAX:
+            self.brightness = BRIGHT_MAX
+            if DEBUG >= 1: print('inc_bright: hit max: ', self.brightness)
+            self.set_colors(BLACK)
+            for i in range(8):
+                time.sleep(0.05)
+                self.set_colors([BLACK, RED, RED, RED], i)
+            time.sleep(0.1)
+        else:
+            self.brightness = new_bright
+            if DEBUG >= 1: print('inc_bright: ', self.brightness)
 
-    def set_black(self):
-        self.set_colors([(0,0,0)])
-
-    def set_white(self):
-        self.set_colors([(255,255,255)])
+    def dec_brightness(self):
+        new_bright = self.brightness - BRIGHT_INC
+        if new_bright <= BRIGHT_MIN:
+            self.brightness = BRIGHT_MIN
+            if DEBUG >= 1: print('dec_bright: hit min: ', self.brightness)
+            self.set_colors(BLACK)
+            for i in range(8):
+                time.sleep(0.05)
+                self.set_colors([BLACK, BLACK, BLACK, RED], i)
+            time.sleep(0.1)
+        else:
+            self.brightness = new_bright
+            if DEBUG >= 1: print('dec_bright: ', self.brightness)
 
 
 def smoothify(n, xs):
@@ -219,7 +233,7 @@ def try_get_board_neo():
         pass
 
     if board_neo:
-        board_neo.brightness = 0.2
+        board_neo.brightness = BRIGHT_INIT
         for _ in range(3):
             board_neo[0] = (255, 0, 0)
             time.sleep(.1)
@@ -241,33 +255,37 @@ neos = Neos(board.D12, NLEDS)
 ## accel
 accel = Accel(board.A0, board.A1, board.A2)
 
-## brightness pot
-bright_pot = Pot(board.A4)
-
 ## palette button
 palette_but = Button(board.D11)
 
+## up/down brightness buttons
+up_but = Button(board.D10)
+down_but = Button(board.D9)
+
+# won't go into idle pattern until this many seconds after last palette change.
 MIN_NEW_PALETTE_TIME = 3
 last_palette_change_time = 0
 
-i = 0
+# TODO: push into neos?.
 palette = PALETTES[PALETTE_INDEX]
+i = 0
 
 while True:
     now = timestamp()
     if DEBUG >= 2: print()
     board_led.value = not board_led.value
 
-    ## Brightness pot
-    pot_val = bright_pot.read()
-    bright = simpleio.map_range(pot_val, 0, 1, MIN_BRIGHT, MAX_BRIGHT)
-    if DEBUG >= 2:
-        print('pot: {:.2f}\t[ potval:{:.2f} ]'.format(bright, pot_val))
-    neos.brightness = bright
+    ## Brightness buttons
+    if up_but.get_press():
+        neos.inc_brightness()
+    elif down_but.get_press():
+        neos.dec_brightness()
 
     ## Palette button
     if palette_but.get_press():
-        neos.set_colors([(0,0,0), (0,0,0), (180, 0, 180)])
+        for i in range(4):
+            neos.set_colors([(0,0,0), (0,0,0), (180, 0, 180)], i)
+            time.sleep(0.02)
         PALETTE_INDEX = (PALETTE_INDEX + 1) % len(PALETTES)
         palette = PALETTES[PALETTE_INDEX]
         last_palette_change_time = now
@@ -279,24 +297,25 @@ while True:
         and now - last_palette_change_time > MIN_NEW_PALETTE_TIME
         and palette != IDLE):
         print('now idle..')
-        neos.set_black()
+        neos.set_colors(BLACK)
         palette = IDLE
     elif (is_moving and palette == IDLE):
         print('now active..')
-        neos.set_white()
+        neos.set_colors(WHITE)
         palette = PALETTES[PALETTE_INDEX]
 
     ## Iterate palette
 
     raw_step = len(palette) * FULL_UPDATE_SEC / TARGET_PALETTE_CYCLE_SEC
-    step = min(max(int(round(raw_step)), 1), int(len(palette) / 2) )
+    step = min(max(int(round(raw_step)), 1),
+               int(len(palette) / 2))
 
     i = (i + step) % len(palette)
-    if DEBUG >= 1:
+    if DEBUG >= 2:
         print('i:', i, '\tstp:', step, '\t[ raw:', raw_step, ' ]')
 
-    if DEBUG >= 1:
-        print('mv:{} \tbr:{:.1f}\tstp:{}'.format(is_moving, bright, step))
+    if DEBUG >= 2:
+        print('mv:{} \t\tstp:{}'.format(is_moving, step))
 
     neos.set_colors(palette, shift=i)
     if board_neo:
