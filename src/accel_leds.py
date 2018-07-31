@@ -26,14 +26,14 @@ import neopixel
 
 NLEDS = 45
 BRIGHT_MIN = 0.05
-BRIGHT_MAX = 0.6
+BRIGHT_MAX = 0.75
 BRIGHT_INC = (BRIGHT_MAX - BRIGHT_MIN ) / 10
-BRIGHT_INIT = 0.1
+BRIGHT_INIT = 0.2
 
 DEBUG = 1
 
 # try to cycle between full color palette in this many seconds
-TARGET_PALETTE_CYCLE_SEC = 7
+TARGET_PALETTE_CYCLE_SEC = 6
 
 # This is actually a function of NLEDS, but i dunno exactly how. this value is
 # roughly right for 45 ¯\_(ツ)_/¯
@@ -70,8 +70,8 @@ class Button(object):
 
 class Accel(object):
     EWMA_WEIGHT = 0.2  # for new points
-    SIZABLE_MOVE_THRESH = 0.1
-    IDLE_DELAY = 3
+    SIZABLE_MOVE_THRESH = 0.08
+    IDLE_DELAY = 5
 
     def __init__(self, pin_x, pin_y, pin_z):
         self._x = analogio.AnalogIn(pin_x)
@@ -252,7 +252,7 @@ board_neo = try_get_board_neo()
 neos = Neos(board.D12, NLEDS)
 
 ## accel
-accel = Accel(board.A0, board.A1, board.A2)
+accel = Accel(board.A3, board.A4, board.A5)
 
 ## palette button
 palette_but = Button(board.D11)
