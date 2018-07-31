@@ -1,5 +1,4 @@
 # TODO:
-# - redo timing code
 # - make patterns follow geometry of bike. (refactor to usehorizontal position
 #   instead of index?)
 # - fancier patterns, apply differences in brightness, back and forth instead of
@@ -33,23 +32,12 @@ BRIGHT_INIT = 0.1
 
 DEBUG = 1
 
-# TODO: lower this when pot is properly wired in.
-# when brightness pot is below this level, accelerometer movement quotient is
-# used to determine brightness.
-ACCEL_BRIGHTNESS_THRESH = 0.9
-
 # try to cycle between full color palette in this many seconds
 TARGET_PALETTE_CYCLE_SEC = 7
 
-# TODO: gah, this can't be right...
-# LED_UPDATE_SEC = (
-#     0.027 if NLEDS >= 100 else
-#     (0.015 if NLEDS >= 50 else
-#      (0.013 if NLEDS >= 25 else
-#       (0.0075 if NLEDS >= 10 else
-#        0.0055))))
-LED_UPDATE_SEC = 0.002
-FULL_UPDATE_SEC = LED_UPDATE_SEC * NLEDS
+# This is actually a function of NLEDS, but i dunno exactly how. this value is
+# roughly right for 45 ¯\_(ツ)_/¯
+FULL_UPDATE_SEC = 0.04
 
 WHITE = (255,255,255)
 BLACK = (0,0,0)
@@ -83,7 +71,7 @@ class Button(object):
 class Accel(object):
     EWMA_WEIGHT = 0.2  # for new points
     SIZABLE_MOVE_THRESH = 0.1
-    IDLE_DELAY = 40 # 4
+    IDLE_DELAY = 3
 
     def __init__(self, pin_x, pin_y, pin_z):
         self._x = analogio.AnalogIn(pin_x)
@@ -141,13 +129,17 @@ class Neos(object):
         self._neos.brightness = max(BRIGHT_MIN, min(BRIGHT_MAX, val))
         self._brightness = val
 
-    def set_colors(self, colors, shift=0):
+    def set_colors(self, colors, shift=0, wave=False):
         if type(colors) is tuple:
             colors = [colors]
         for i in range(self._num):
             i = self._num - 1 - i
             self._neos[i] = colors[(i + shift) % len(colors)]
-        self._neos.show()
+            if wave:
+                self._neos.show()
+        if not wave:
+            self._neos.show()
+
 
     def inc_brightness(self):
         new_bright = self.brightness + BRIGHT_INC
@@ -213,10 +205,17 @@ ORANGE_PURPLE = smoothify(5, [(150, 50, 0),
 PALETTES = [RGB, GREEN_BLUE, VIOLET, ORANGE_PURPLE]
 PALETTE_INDEX = 0
 
-IDLE = smoothify(3, [(0, 0, 0),
-                     (180, 0, 90),
-                     (100, 0, 125),
-                     (180, 0, 90)])
+IDLE_PALETTE = smoothify(3, [(0, 0, 0),
+                             (180, 0, 90),
+                             (100, 0, 125),
+                             (180, 0, 90)])
+CHANGE_BUTTON_PALETTE = smoothify(2, [(0, 0, 0),
+                                      (0, 0, 0),
+                                      (180, 0, 180)])
+CHANGE_SPEED_PALETTE = smoothify(2, [(0, 180, 0),
+                                     (80, 150, 80),
+                                     (0, 0, 0),
+                                     (0, 0, 0)])
 
 
 
@@ -268,6 +267,9 @@ last_palette_change_time = 0
 
 # TODO: push into neos?.
 palette = PALETTES[PALETTE_INDEX]
+SPEEDS = [0.5, 1, 4, 8]
+SPEED_INDEX = 1
+
 i = 0
 
 while True:
@@ -276,16 +278,23 @@ while True:
     board_led.value = not board_led.value
 
     ## Brightness buttons
-    if up_but.get_press():
+    up_press, down_press = up_but.get_press(), down_but.get_press()
+    if up_press and down_press:
+        # Special speed hack.
+        SPEED_INDEX = (SPEED_INDEX + 1) % len(SPEEDS)
+        print('speed change:', SPEED_INDEX)
+        for i in range(10):
+            neos.set_colors(CHANGE_SPEED_PALETTE, int(i * (SPEED_INDEX+1)))
+            time.sleep(.1 / (SPEED_INDEX+1))
+    elif up_press:
         neos.inc_brightness()
-    elif down_but.get_press():
+    elif down_press:
         neos.dec_brightness()
 
     ## Palette button
     if palette_but.get_press():
-        for i in range(4):
-            neos.set_colors([(0,0,0), (0,0,0), (180, 0, 180)], i)
-            time.sleep(0.02)
+        for i in range(10):
+            neos.set_colors(CHANGE_BUTTON_PALETTE, i)
         PALETTE_INDEX = (PALETTE_INDEX + 1) % len(PALETTES)
         palette = PALETTES[PALETTE_INDEX]
         last_palette_change_time = now
@@ -295,19 +304,26 @@ while True:
 
     if (not is_moving
         and now - last_palette_change_time > MIN_NEW_PALETTE_TIME
-        and palette != IDLE):
+        and palette != IDLE_PALETTE):
         print('now idle..')
-        neos.set_colors(BLACK)
-        palette = IDLE
-    elif (is_moving and palette == IDLE):
+        palette = IDLE_PALETTE
+        last_palette_change_time = now
+        neos.set_colors(BLACK, wave=True)
+        neos.set_colors(palette, wave=True)
+    elif (is_moving
+          and now - last_palette_change_time > MIN_NEW_PALETTE_TIME
+          and palette == IDLE_PALETTE):
         print('now active..')
-        neos.set_colors(WHITE)
         palette = PALETTES[PALETTE_INDEX]
+        last_palette_change_time = now
+        neos.set_colors(BLACK, wave=True)
+        neos.set_colors(palette, wave=True)
 
     ## Iterate palette
 
     raw_step = len(palette) * FULL_UPDATE_SEC / TARGET_PALETTE_CYCLE_SEC
-    step = min(max(int(round(raw_step)), 1),
+    mult = raw_step * SPEEDS[SPEED_INDEX]
+    step = min(max(int(round(mult)), 1),
                int(len(palette) / 2))
 
     i = (i + step) % len(palette)
