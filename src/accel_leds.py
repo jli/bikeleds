@@ -1,3 +1,18 @@
+# TODO:
+# - use buttons instead of pot
+# - redo timing code
+# - make patterns follow geometry of bike. (refactor to usehorizontal position
+#   instead of index?)
+# - fancier patterns, apply differences in brightness, back and forth instead of
+#   one directional cycle.
+# - refactor events handling to be higher level? event streams, etc?
+
+# Inputs:
+# - one large button: cycles between patterns
+# - two smaller buttons: up/down control for brightness. (maybe also control
+#   speed somehow?)
+# - accelerometer: when stopped, changes to different pattern.
+
 import analogio
 import board
 import digitalio
@@ -83,7 +98,6 @@ class Accel(object):
 
     def _read(self):
         def cook(axis):
-            # TODO: itsy-bitsy has 12-bit ADCs - is this right?
             val = axis.value / 65536
             val -= 0.5  # Shift values to true center (0.5).
             return val * 3.0  # Convert to gravities.
