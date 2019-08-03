@@ -24,9 +24,9 @@ except ImportError:
 
 import neopixel
 
-NLEDS = 45
+NLEDS = 44
 BRIGHT_MIN = 0.05
-BRIGHT_MAX = 0.75
+BRIGHT_MAX = 1.0
 BRIGHT_INC = (BRIGHT_MAX - BRIGHT_MIN ) / 10
 BRIGHT_INIT = 0.2
 
