@@ -9,7 +9,7 @@ import time
 
 import board
 import simpleio
-import adafruit_fancyled as fancy
+from adafruit_fancyled import adafruit_fancyled as fancy
 import neopixel
 
 # behavior config
@@ -44,7 +44,7 @@ NEIGHBOR_DIRS = [
   [-1, 1], [0, 1], [1, 1],
 ]
 DIRS_LEN = len(NEIGHBOR_DIRS)
-FRAMES_AFTER_NO_CHANGE = 3
+FRAMES_AFTER_NO_CHANGE = 2
 
 # state
 FRAME_COUNT = 0
@@ -153,8 +153,9 @@ class World(object):
 
     def step(self):
         changed = False
-        for (r, row) in enumerate(self.grid):
-            for (c, cell) in enumerate(row):
+        for r in range(GRID_ROWS):
+            for c in range(GRID_COLS):
+                cell = self.grid[r][c]
                 if cell.last_update == FRAME_COUNT: continue
                 elif cell.type == CELL_PREDATOR:
                     if self.predator_action(r, c, cell): changed = True
@@ -228,12 +229,20 @@ board_led.value = True
 neos = NeoGrid()
 world = init_world()
 
+# start_secs = time.monotonic()
+# start_frames = 0
 while True:
     # print(FRAME_COUNT)
     board_led.value = not board_led.value
     changed = world.step()
     neos.set_colors(world.grid)
     FRAME_COUNT += 1
+
+    # total_secs = time.monotonic() - start_secs
+    # if total_secs > 10:
+    #     print('fps:', (FRAME_COUNT - start_frames) / total_secs, '(', FRAME_COUNT-start_frames, '/', total_secs, ')')
+    #     start_frames = FRAME_COUNT
+    #     start_secs = time.monotonic()
     if not changed:
         print('RESETTING. frames:', FRAME_COUNT)
         for _ in range(FRAMES_AFTER_NO_CHANGE):
