@@ -23,8 +23,14 @@ PREY_BREED_CYCLE = 1
 PREY_BREED_PROB = 0.8
 
 # world config
-GRID_ROWS = 14
-GRID_COLS = 14
+WRAPAROUND = False
+GRID_ROWS = 4 #16
+GRID_COLS = GRID_ROWS
+PHYS_ROWS = 16
+PHYS_COLS = PHYS_ROWS
+SKIP_TOP_ROWS = (PHYS_ROWS - GRID_ROWS) // 2
+SKIP_LEFT_COLS = (PHYS_COLS - GRID_COLS) // 2
+SKIP_RIGHT_COLS = PHYS_COLS - GRID_COLS - SKIP_LEFT_COLS
 
 # physical config
 BOARD_LED = board.D13
@@ -65,15 +71,23 @@ def shuffle(xs):
         i -= 1
 
 
+def index_wrap(i, max_val):
+  if i < 0: return i + max_val
+  elif i >= max_val: return i - max_val
+  return i
+
+
 class NeoGrid(object):
     def __init__(self):
-        self.neos = neopixel.NeoPixel(NEOS_PIN, GRID_ROWS * GRID_COLS, auto_write=False)
+        self.neos = neopixel.NeoPixel(NEOS_PIN, PHYS_COLS * PHYS_ROWS, auto_write=False)
 
     def set_colors(self, grid):
-        even_row = True
+        even_row = SKIP_TOP_ROWS % 2 == 0
         for r in range(0, GRID_ROWS):
             for c in range(0, GRID_COLS):
-                i = r * GRID_COLS + (c if even_row else GRID_COLS - 1 - c)
+                i = (PHYS_COLS * (SKIP_TOP_ROWS + r)
+                     + (SKIP_LEFT_COLS if even_row else SKIP_RIGHT_COLS)
+                     + (c if even_row else GRID_COLS - 1 - c))
                 self.neos[i] = grid[r][c].color().pack()
             even_row = not even_row
         self.neos.show()
@@ -142,13 +156,15 @@ class World(object):
     def find_cell(self, row, col, typ):
         shuffle(NEIGHBOR_DIRS)
         for (rd, cd) in NEIGHBOR_DIRS:
-          r2 = rd + row
-          c2 = cd + col
-          # TODO: wraparound?
-          if r2 < 0 or r2 >= GRID_ROWS or c2 < 0 or c2 >= GRID_COLS:
-              continue
-          if self.grid[r2][c2].type == typ:
-              return (r2, c2)
+            r2 = rd + row
+            c2 = cd + col
+            if WRAPAROUND:
+                r2 = index_wrap(r2, GRID_ROWS)
+                c2 = index_wrap(c2, GRID_COLS)
+            elif r2 < 0 or r2 >= GRID_ROWS or c2 < 0 or c2 >= GRID_COLS:
+                continue
+            if self.grid[r2][c2].type == typ:
+                return (r2, c2)
         return None
 
     def step(self):
