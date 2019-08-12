@@ -18,13 +18,14 @@ PREDATOR_FEED_CYCLE = 2
 PREDATOR_BREED_CYCLE = 6
 PREDATOR_BREED_PROB = 0.75
 INIT_PREY_FRAC = 0.30
-PREY_MOVES = True
+PREY_MOVES = False
 PREY_BREED_CYCLE = 1
 PREY_BREED_PROB = 0.85
 
 # world config
 WRAPAROUND = False
-GRID_ROWS = 10
+SPAWN_OVER_PREY = False
+GRID_ROWS = 12
 GRID_COLS = GRID_ROWS
 PHYS_ROWS = 16
 PHYS_COLS = PHYS_ROWS
@@ -37,7 +38,7 @@ BOARD_LED = board.D13
 NEOS_PIN = board.D12
 BRIGHT_INIT = 0.05
 BRIGHT_MIN = 0.01
-BRIGHT_MAX = 0.3
+BRIGHT_MAX = 0.1
 BRIGHT_INC = (BRIGHT_MAX - BRIGHT_MIN ) / 10
 
 # misc constants
@@ -206,7 +207,7 @@ class World(object):
             and random.random() < PREDATOR_BREED_PROB):
             # Prefer to spawn into empty space, but spawn over a prey cell if necessary.
             pos = self.find_cell(r, c, CELL_EMPTY)
-            if not pos: pos = self.find_cell(r, c, CELL_PREY)
+            if not pos and SPAWN_OVER_PREY: pos = self.find_cell(r, c, CELL_PREY)
             if pos:
                 self.grid[pos[0]][pos[1]] = Cell(CELL_PREDATOR)
                 pred.last_breed = FRAME_COUNT
