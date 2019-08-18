@@ -12,7 +12,7 @@ import neopixel
 
 # behavior config
 INIT_PREDATOR_FRAC = 0.15
-PREDATOR_FEED_CYCLE = 3
+PREDATOR_FEED_CYCLE = 2
 PREDATOR_BREED_CYCLE = 5
 PREDATOR_BREED_PROB = 0.6
 INIT_PREY_FRAC = 0.25
@@ -36,7 +36,7 @@ SKIP_RIGHT_COLS = PHYS_COLS - GRID_COLS - SKIP_LEFT_COLS
 BOARD_LED = board.D13
 NEOS_PIN = board.D12
 BRIGHT_MIN = 0.008
-BRIGHT_MAX = 0.10
+BRIGHT_MAX = 0.15
 
 # misc constants
 CELL_EMPTY = 0
@@ -119,8 +119,8 @@ class Cell(object):
             return fancy.CHSV(PREDATOR_HUE, feed_sat, feed_bright)
         elif self.type == CELL_PREY:
             age = FRAME_COUNT - self.birth
-            age_bright = map_(age, 7, 0, BRIGHT_MIN, BRIGHT_MAX, clip=True)
-            age_sat = map_(age, 14, 0, 0.80, 1.0, clip=True)
+            age_bright = map_(age, 5, 0, BRIGHT_MIN, BRIGHT_MAX, clip=True)
+            age_sat = map_(age, 10, 0, 0.80, 1.0, clip=True)
             return fancy.CHSV(PREY_HUE, age_sat, age_bright)
         else:
             # CELL_EMPTY and TOMB
