@@ -3,14 +3,14 @@ import random
 from adafruit_fancyled import adafruit_fancyled as fancy
 import neopixel
 
-BRIGHT_MAX = 0.2
+BRIGHTNESS = 0.25
 NLEDS = 30
-NPARTICLES = 3
+NPARTICLES = 2
 
 SPEED_DECAY = 0.995
 SPEED_TO_GC = 0.4
-TAIL_BRIGHT_DECAY = 0.7
-TAIL_HUE_SHIFT = 0.04
+TAIL_BRIGHT_DECAY = 0.8
+TAIL_HUE_SHIFT = 0.03
 HEAD_HUE_SHIFT = 0.005
 
 
@@ -27,10 +27,16 @@ def rand_hue():
 
 
 class Particle(object):
-    def __init__(self):
-        self.pos = random.random() * NLEDS
-        self.dir = 1 if (random.random() > 0.5) else -1
-        self.speed = max(0.4, random.random())
+    def __init__(self, pos=None, dir=None, speed=None):
+        if pos is None:
+            pos = random.random() * NLEDS
+        if dir is None:
+            dir = 1 if (random.random() > 0.5) else -1
+        if speed is None:
+            speed = max(0.4, random.random())
+        self.pos = pos
+        self.dir = dir
+        self.speed = speed
         self.hue = rand_hue()
 
     def step(self):
@@ -44,9 +50,15 @@ class Particle(object):
 
 class World(object):
     def __init__(self, neo_pin):
-        self.particles = [Particle() for _ in range(NPARTICLES)]
+        if NPARTICLES == 2:
+            self.particles = [
+                Particle(pos=0, dir=1, speed=1),
+                Particle(pos=NLEDS-1, dir=-1, speed=1),
+            ]
+        else:
+            self.particles = [Particle() for _ in range(NPARTICLES)]
         self.pixels = [[0,0] for _ in range(NLEDS)]
-        self.neos = neopixel.NeoPixel(neo_pin, NLEDS, brightness=BRIGHT_MAX, auto_write=False)
+        self.neos = neopixel.NeoPixel(neo_pin, NLEDS, brightness=BRIGHTNESS, auto_write=False)
 
     def step(self):
         for (i, p) in enumerate(self.particles):
