@@ -13,8 +13,8 @@ import neopixel
 # behavior config
 INIT_PREDATOR_FRAC = 0.15
 PREDATOR_FEED_CYCLE = 3
-PREDATOR_BREED_CYCLE = 4
-PREDATOR_BREED_PROB = 0.8
+PREDATOR_BREED_CYCLE = 5
+PREDATOR_BREED_PROB = 0.6
 INIT_PREY_FRAC = 0.25
 PREY_MOVES = True
 PREY_BREED_CYCLE = 2
@@ -22,7 +22,7 @@ PREY_BREED_CYCLE = 2
 TOMB_CYCLE = 2  # steps that dead prey cells stay empty
 
 # world config
-# WRAPAROUND = False
+WRAPAROUND = True
 # SPAWN_OVER_PREY = False
 GRID_ROWS = 16
 GRID_COLS = GRID_ROWS
@@ -56,7 +56,7 @@ FRAME_COUNT = 0
 PREDATOR_HUE, PREY_HUE, RAND_HUE_STATE = None, None, random.random()
 def rand_hue():
     global RAND_HUE_STATE
-    RAND_HUE_STATE = (RAND_HUE_STATE + random.uniform(.2222, .4444)) % 1
+    RAND_HUE_STATE = (RAND_HUE_STATE + random.uniform(.3333, .6666)) % 1
     return RAND_HUE_STATE
 
 
@@ -162,13 +162,13 @@ class World(object):
         self.neos.set_colors(self.grid)
 
     def find_cell(self, row, col, typ):
-        # shuffle(NEIGHBOR_DIRS)  # doing once in step as dumb optimization
+        shuffle(NEIGHBOR_DIRS)
         for (rd, cd) in NEIGHBOR_DIRS:
             r2 = rd + row
             c2 = cd + col
-            # if WRAPAROUND:
-            #     r2 = index_wrap(r2, GRID_ROWS)
-            #     c2 = index_wrap(c2, GRID_COLS)
+            if WRAPAROUND:
+                r2 = index_wrap(r2, GRID_ROWS)
+                c2 = index_wrap(c2, GRID_COLS)
             if r2 < 0 or r2 >= GRID_ROWS or c2 < 0 or c2 >= GRID_COLS:
                 continue
             if self.grid[r2][c2].type == typ:
@@ -176,13 +176,13 @@ class World(object):
         return None
 
     def find_cell_multi(self, row, col, types):
-        # shuffle(NEIGHBOR_DIRS)  # doing once in step as dumb optimization
+        shuffle(NEIGHBOR_DIRS)
         for (rd, cd) in NEIGHBOR_DIRS:
             r2 = rd + row
             c2 = cd + col
-            # if WRAPAROUND:
-            #     r2 = index_wrap(r2, GRID_ROWS)
-            #     c2 = index_wrap(c2, GRID_COLS)
+            if WRAPAROUND:
+                r2 = index_wrap(r2, GRID_ROWS)
+                c2 = index_wrap(c2, GRID_COLS)
             if r2 < 0 or r2 >= GRID_ROWS or c2 < 0 or c2 >= GRID_COLS:
                 continue
             if self.grid[r2][c2].type in types:
@@ -190,7 +190,6 @@ class World(object):
         return None
 
     def step(self):
-        shuffle(NEIGHBOR_DIRS)
         changed = False
         for r in range(GRID_ROWS):
             for c in range(GRID_COLS):
@@ -290,9 +289,9 @@ while True:
     #     start_secs = time.monotonic()
     if not changed:
         # print('RESETTING. frames:', FRAME_COUNT)
-        for _ in range(FRAMES_AFTER_NO_CHANGE):
-            _changed = world.step()
-            world.draw()
-            FRAME_COUNT += 1
+        # for _ in range(FRAMES_AFTER_NO_CHANGE):
+        #     _changed = world.step()
+        #     world.draw()
+        #     FRAME_COUNT += 1
         FRAME_COUNT = 0
         reset_world(world)
