@@ -7,16 +7,22 @@ BRIGHTNESS = 0.25
 NLEDS = 30
 NPARTICLES = 2
 
-SPEED_DECAY = 0.995
-SPEED_TO_GC = 0.4
-TAIL_BRIGHT_DECAY = 0.8
-TAIL_HUE_SHIFT = 0.03
+BOUNCE = True  # turn around vs. wrap around at edges
+TAIL_BRIGHT_DECAY = 0.70
+TAIL_HUE_SHIFT = 0.025
 HEAD_HUE_SHIFT = 0.005
+# SPEED_DECAY = 0.995
+# SPEED_TO_GC = 0.4
 
 
 def clip(x, a=0, b=NLEDS):
     if x < a: return (a+1, True)
     if x >= b: return (b-1, True)
+    return (x, False)
+
+def wrap(x, a=0, b=NLEDS):
+    if x < a: return (b-1, True)
+    if x >= b: return (a, True)
     return (x, False)
 
 RAND_HUE_STATE = 0
@@ -33,7 +39,7 @@ class Particle(object):
         if dir is None:
             dir = 1 if (random.random() > 0.5) else -1
         if speed is None:
-            speed = max(0.4, random.random())
+            speed = 0.5 + random.random() / 2
         self.pos = pos
         self.dir = dir
         self.speed = speed
@@ -41,8 +47,11 @@ class Particle(object):
 
     def step(self):
         self.hue += HEAD_HUE_SHIFT
-        self.pos, clipped = clip(self.pos + self.dir * self.speed)
-        if clipped: self.dir *= -1
+        if BOUNCE:
+            self.pos, clipped = clip(self.pos + self.dir * self.speed)
+            if clipped: self.dir *= -1
+        else:
+            self.pos, _wrapped = wrap(self.pos + self.dir * self.speed)
         # if random.random() < 0.02:
         #     self.speed += random.random() - 0.5
         # return self.speed > SPEED_TO_GC
@@ -55,6 +64,12 @@ class World(object):
                 Particle(pos=0, dir=1, speed=1),
                 Particle(pos=NLEDS-1, dir=-1, speed=1),
             ]
+        # elif NPARTICLES == 3:
+        #     self.particles = [
+        #         Particle(pos=0, dir=1, speed=1),
+        #         Particle(pos=NLEDS//2, dir=-1, speed=1),
+        #         Particle(pos=NLEDS-1, dir=-1, speed=1),
+        #     ]
         else:
             self.particles = [Particle() for _ in range(NPARTICLES)]
         self.pixels = [[0,0] for _ in range(NLEDS)]
