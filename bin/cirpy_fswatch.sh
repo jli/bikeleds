@@ -2,7 +2,8 @@
 
 # fswatch is an OS X program like inotifywatch. `brew install fswatch`
 
-DEST=/Volumes/CIRCUITPY/code.py
+DEST=${2:-/Volumes/CIRCUITPY/code.py}
+
 
 echo initial copy ...
 /bin/cp -vf "$1" "$DEST"
