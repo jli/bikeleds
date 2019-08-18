@@ -11,11 +11,11 @@ from adafruit_fancyled import adafruit_fancyled as fancy
 import neopixel
 
 # behavior config
-INIT_PREDATOR_FRAC = 0.15
-PREDATOR_FEED_CYCLE = 3
+INIT_PREDATOR_FRAC = 0.10
+PREDATOR_FEED_CYCLE = 2
 PREDATOR_BREED_CYCLE = 4
 PREDATOR_BREED_PROB = 0.6
-INIT_PREY_FRAC = 0.25
+INIT_PREY_FRAC = 0.30
 PREY_MOVES = True
 PREY_BREED_CYCLE = 2
 # PREY_BREED_PROB = 1.0
