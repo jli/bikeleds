@@ -1,7 +1,5 @@
 # Inputs:
 # (dreaming)
-# - knob to control speed (todo: figure out max speed first)
-# - brightness control
 # - knob to control predator breed/feed ?
 
 import random
@@ -13,19 +11,20 @@ from adafruit_fancyled import adafruit_fancyled as fancy
 import neopixel
 
 # behavior config
-INIT_PREDATOR_FRAC = 0.20
-PREDATOR_FEED_CYCLE = 2
-PREDATOR_BREED_CYCLE = 6
-PREDATOR_BREED_PROB = 0.75
-INIT_PREY_FRAC = 0.30
-PREY_MOVES = False
-PREY_BREED_CYCLE = 1
-PREY_BREED_PROB = 0.85
+INIT_PREDATOR_FRAC = 0.15
+PREDATOR_FEED_CYCLE = 3
+PREDATOR_BREED_CYCLE = 4
+PREDATOR_BREED_PROB = 0.8
+INIT_PREY_FRAC = 0.25
+PREY_MOVES = True
+PREY_BREED_CYCLE = 2
+# PREY_BREED_PROB = 1.0
+TOMB_CYCLE = 2  # steps that dead prey cells stay empty
 
 # world config
-WRAPAROUND = False
-SPAWN_OVER_PREY = False
-GRID_ROWS = 12
+# WRAPAROUND = False
+# SPAWN_OVER_PREY = False
+GRID_ROWS = 16
 GRID_COLS = GRID_ROWS
 PHYS_ROWS = 16
 PHYS_COLS = PHYS_ROWS
@@ -36,26 +35,25 @@ SKIP_RIGHT_COLS = PHYS_COLS - GRID_COLS - SKIP_LEFT_COLS
 # physical config
 BOARD_LED = board.D13
 NEOS_PIN = board.D12
-BRIGHT_INIT = 0.05
-BRIGHT_MIN = 0.01
-BRIGHT_MAX = 0.1
-BRIGHT_INC = (BRIGHT_MAX - BRIGHT_MIN ) / 10
+BRIGHT_MIN = 0.008
+BRIGHT_MAX = 0.10
 
 # misc constants
 CELL_EMPTY = 0
 CELL_PREY = 1
 CELL_PREDATOR = 2
+CELL_TOMB = 3
 NEIGHBOR_DIRS = [
   [-1, -1], [0, -1], [1, -1],
   [-1, 0], [0, 1],
   [-1, 1], [0, 1], [1, 1],
 ]
 DIRS_LEN = len(NEIGHBOR_DIRS)
-FRAMES_AFTER_NO_CHANGE = 2
+FRAMES_AFTER_NO_CHANGE = 1
 
 # state
 FRAME_COUNT = 0
-PREDATOR_HUE, PREY_HUE, RAND_HUE_STATE = None, None, 0
+PREDATOR_HUE, PREY_HUE, RAND_HUE_STATE = None, None, random.random()
 def rand_hue():
     global RAND_HUE_STATE
     RAND_HUE_STATE = (RAND_HUE_STATE + random.uniform(.2222, .4444)) % 1
@@ -114,28 +112,34 @@ class Cell(object):
         self.last_feed = FRAME_COUNT  # predator-only
 
     def color(self):
-        if self.type == CELL_EMPTY:
-            return fancy.CHSV(0,0,0)
-        elif self.type == CELL_PREDATOR:
+        if self.type == CELL_PREDATOR:
             hunger = FRAME_COUNT - self.last_feed
-            feed_bright = map_(hunger, PREDATOR_FEED_CYCLE, 0, BRIGHT_MIN, BRIGHT_MAX)
-            feed_sat = map_(hunger, PREDATOR_FEED_CYCLE, 0, 0.85, 1.0)
+            feed_bright = map_(hunger, PREDATOR_FEED_CYCLE-1, 0, BRIGHT_MIN, BRIGHT_MAX)
+            feed_sat = map_(hunger, PREDATOR_FEED_CYCLE-1, 0, 0.80, 1.0)
             return fancy.CHSV(PREDATOR_HUE, feed_sat, feed_bright)
-        else:
+        elif self.type == CELL_PREY:
             age = FRAME_COUNT - self.birth
-            age_bright = map_(age, 10, 0, BRIGHT_MIN, BRIGHT_MAX, clip=True)
-            age_sat = map_(age, 10, 0, 0.85, 1.0, clip=True)
+            age_bright = map_(age, 7, 0, BRIGHT_MIN, BRIGHT_MAX, clip=True)
+            age_sat = map_(age, 14, 0, 0.80, 1.0, clip=True)
             return fancy.CHSV(PREY_HUE, age_sat, age_bright)
+        else:
+            # CELL_EMPTY and TOMB
+            return fancy.CHSV(0,0,0)
 
     def char(self):
         if self.type == CELL_EMPTY: return ' '
         elif self.type == CELL_PREDATOR: return 'X'
         elif self.type == CELL_PREY: return '_'
-        else: return '???'
+        else: return '?'
 
 
 class World(object):
     def __init__(self):
+        self.neos = NeoGrid()
+        self.grid = []
+        self.reset_grid()
+
+    def reset_grid(self):
         self.grid = []
         for r in range(GRID_ROWS):
             col = []
@@ -154,21 +158,39 @@ class World(object):
             print()
         time.sleep(.1)
 
+    def draw(self):
+        self.neos.set_colors(self.grid)
+
     def find_cell(self, row, col, typ):
-        shuffle(NEIGHBOR_DIRS)
+        # shuffle(NEIGHBOR_DIRS)  # doing once in step as dumb optimization
         for (rd, cd) in NEIGHBOR_DIRS:
             r2 = rd + row
             c2 = cd + col
-            if WRAPAROUND:
-                r2 = index_wrap(r2, GRID_ROWS)
-                c2 = index_wrap(c2, GRID_COLS)
-            elif r2 < 0 or r2 >= GRID_ROWS or c2 < 0 or c2 >= GRID_COLS:
+            # if WRAPAROUND:
+            #     r2 = index_wrap(r2, GRID_ROWS)
+            #     c2 = index_wrap(c2, GRID_COLS)
+            if r2 < 0 or r2 >= GRID_ROWS or c2 < 0 or c2 >= GRID_COLS:
                 continue
             if self.grid[r2][c2].type == typ:
                 return (r2, c2)
         return None
 
+    def find_cell_multi(self, row, col, types):
+        # shuffle(NEIGHBOR_DIRS)  # doing once in step as dumb optimization
+        for (rd, cd) in NEIGHBOR_DIRS:
+            r2 = rd + row
+            c2 = cd + col
+            # if WRAPAROUND:
+            #     r2 = index_wrap(r2, GRID_ROWS)
+            #     c2 = index_wrap(c2, GRID_COLS)
+            if r2 < 0 or r2 >= GRID_ROWS or c2 < 0 or c2 >= GRID_COLS:
+                continue
+            if self.grid[r2][c2].type in types:
+                return (r2, c2)
+        return None
+
     def step(self):
+        shuffle(NEIGHBOR_DIRS)
         changed = False
         for r in range(GRID_ROWS):
             for c in range(GRID_COLS):
@@ -178,8 +200,15 @@ class World(object):
                     if self.predator_action(r, c, cell): changed = True
                 elif cell.type == CELL_PREY:
                     if self.prey_action(r, c, cell): changed = True
+                elif cell.type == CELL_TOMB:
+                    self.tomb_action(r, c, cell)
                 cell.last_update = FRAME_COUNT
         return changed
+
+    def tomb_action(self, r, c, tomb):
+        if FRAME_COUNT - tomb.birth >= TOMB_CYCLE:
+            self.grid[r][c] = Cell(CELL_EMPTY)
+        return False  # don't count tomb->empty as a state change
 
     def predator_action(self, r, c, pred):
         changed = False
@@ -187,27 +216,28 @@ class World(object):
         if prey_pos:
             # move and eat prey
             self.grid[prey_pos[0]][prey_pos[1]] = pred
-            self.grid[r][c] = Cell(CELL_EMPTY)
+            self.grid[r][c] = Cell(CELL_TOMB if (TOMB_CYCLE > 0) else CELL_EMPTY)
             pred.last_feed = FRAME_COUNT
             changed = True
-        elif FRAME_COUNT - pred.last_feed > PREDATOR_FEED_CYCLE:
+        elif FRAME_COUNT - pred.last_feed >= PREDATOR_FEED_CYCLE:
             # die
             self.grid[r][c] = Cell(CELL_EMPTY)
             changed = True
             return changed
         else:
             # move to random empty cell
-            pos = self.find_cell(r, c, CELL_EMPTY)
+            pos = self.find_cell_multi(r, c, (CELL_EMPTY, CELL_TOMB))
             if pos:
                 self.grid[pos[0]][pos[1]] = pred
                 self.grid[r][c] = Cell(CELL_EMPTY)
                 changed = True
 
-        if (FRAME_COUNT - pred.last_breed > PREDATOR_BREED_CYCLE
+        if (FRAME_COUNT - pred.last_breed >= PREDATOR_BREED_CYCLE
             and random.random() < PREDATOR_BREED_PROB):
+            pos = self.find_cell_multi(r, c, (CELL_EMPTY, CELL_TOMB))
             # Prefer to spawn into empty space, but spawn over a prey cell if necessary.
-            pos = self.find_cell(r, c, CELL_EMPTY)
-            if not pos and SPAWN_OVER_PREY: pos = self.find_cell(r, c, CELL_PREY)
+            # if not pos and SPAWN_OVER_PREY:
+            #     pos = self.find_cell(r, c, CELL_PREY)
             if pos:
                 self.grid[pos[0]][pos[1]] = Cell(CELL_PREDATOR)
                 pred.last_breed = FRAME_COUNT
@@ -215,13 +245,11 @@ class World(object):
         return changed
 
     def prey_action(self, r, c, prey):
-        # TODO: non-asexual breeding option?
-        # TODO: die if haven't bred recently?
         changed = False
         empty_pos = self.find_cell(r, c, CELL_EMPTY)
-        if (FRAME_COUNT - prey.last_breed > PREY_BREED_CYCLE
-            and empty_pos
-            and random.random() < PREY_BREED_PROB):
+        if (FRAME_COUNT - prey.last_breed >= PREY_BREED_CYCLE
+            and empty_pos):
+            # and random.random() < PREY_BREED_PROB):
             # breed
             self.grid[empty_pos[0]][empty_pos[1]] = Cell(CELL_PREY)
             self.last_breed = FRAME_COUNT
@@ -233,18 +261,18 @@ class World(object):
         return changed
 
 
-def init_world():
+def reset_world(world):
     global PREDATOR_HUE
     global PREY_HUE
     PREDATOR_HUE = rand_hue()
     PREY_HUE = rand_hue()
-    return World()
+    world.reset_grid()
 
 
 board_led = simpleio.DigitalOut(BOARD_LED)
 board_led.value = True
-neos = NeoGrid()
-world = init_world()
+world = World()
+reset_world(world)
 
 # start_secs = time.monotonic()
 # start_frames = 0
@@ -252,7 +280,7 @@ while True:
     # print(FRAME_COUNT)
     board_led.value = not board_led.value
     changed = world.step()
-    neos.set_colors(world.grid)
+    world.draw()
     FRAME_COUNT += 1
 
     # total_secs = time.monotonic() - start_secs
@@ -261,10 +289,10 @@ while True:
     #     start_frames = FRAME_COUNT
     #     start_secs = time.monotonic()
     if not changed:
-        print('RESETTING. frames:', FRAME_COUNT)
+        # print('RESETTING. frames:', FRAME_COUNT)
         for _ in range(FRAMES_AFTER_NO_CHANGE):
             _changed = world.step()
-            neos.set_colors(world.grid)
+            world.draw()
             FRAME_COUNT += 1
         FRAME_COUNT = 0
-        world = init_world()
+        reset_world(world)
