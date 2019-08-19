@@ -26,11 +26,11 @@ import neopixel
 
 NLEDS = 44
 BRIGHT_MIN = 0.05
-BRIGHT_MAX = 1.0
-BRIGHT_INC = (BRIGHT_MAX - BRIGHT_MIN ) / 10
+BRIGHT_MAX = 0.50
+BRIGHT_INC = 0.05
 BRIGHT_INIT = 0.2
 
-DEBUG = 1
+DEBUG = 0
 
 # try to cycle between full color palette in this many seconds
 TARGET_PALETTE_CYCLE_SEC = 6
@@ -71,7 +71,7 @@ class Button(object):
 class Accel(object):
     EWMA_WEIGHT = 0.2  # for new points
     SIZABLE_MOVE_THRESH = 0.08
-    IDLE_DELAY = 5
+    IDLE_DELAY = 10
 
     def __init__(self, pin_x, pin_y, pin_z):
         self._x = analogio.AnalogIn(pin_x)
@@ -192,23 +192,41 @@ def smoothify(n, xs):
     return call_n_times(smooth, xs, n)
 
 
-RGB = smoothify(7, [(255, 0, 0),
-                    (0, 255, 0),
-                    (0, 0, 255)])
-GREEN_BLUE = smoothify(6, [(0, 130, 60),
-                           (0, 50, 100)])
-VIOLET = smoothify(5, [(100, 0, 125),
-                       (50, 0, 90),
-                       (90, 0, 50)])
+# RGB = smoothify(7, [(255, 0, 0),
+#                     (0, 255, 0),
+#                     (0, 0, 255)])
+
 ORANGE_PURPLE = smoothify(5, [(150, 50, 0),
                               (125, 0, 125)])
-PALETTES = [RGB, GREEN_BLUE, VIOLET, ORANGE_PURPLE]
-PALETTE_INDEX = 0
-
-IDLE_PALETTE = smoothify(3, [(0, 0, 0),
+ORANGE_PURPLE_BLANK = smoothify(3, [(0, 0, 0), (0, 0, 0),
+                                    (150, 50, 0),
+                                    (125, 0, 125),
+                                    (150, 50, 0),
+                                    ])
+PURPLE_BLUE_BLANK = smoothify(4, [(0,0,0),
+                            (205, 0, 125),
+                            (0, 80, 125),
+                            (205, 0, 125),
+                            ])
+PURPLE_BLUE = smoothify(4, [(205, 0, 125),
+                            (0, 80, 125),
+                            ])
+GREEN_BLUE = smoothify(6, [(0, 170, 80),
+                           (30, 80, 150)])
+BLUE_GREEN_BLANK = smoothify(3, [(0, 0, 0), (0, 0, 0),
+                                 (0, 50, 100),
+                                 (0, 130, 60),
+                                 (0, 50, 100),
+                                ])
+PINK_PURPLE_BLANK = smoothify(3, [(0, 0, 0),
                              (180, 0, 90),
                              (100, 0, 125),
                              (180, 0, 90)])
+PALETTES = [PURPLE_BLUE_BLANK, ORANGE_PURPLE_BLANK, PINK_PURPLE_BLANK, BLUE_GREEN_BLANK, PURPLE_BLUE, ORANGE_PURPLE, GREEN_BLUE]
+PALETTE_INDEX = 0
+
+IDLE_PALETTE = smoothify(3, [
+    (0,0,0), (0,0,0), (180, 20, 30)])
 CHANGE_BUTTON_PALETTE = smoothify(2, [(0, 0, 0),
                                       (0, 0, 0),
                                       (180, 0, 180)])
